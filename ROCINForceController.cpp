@@ -774,7 +774,7 @@ SimTK::State& ROCINForceController::setInitStateFromFile(Model& aModel, const st
 	stateStorage->getData(0,n_states,initStateVector);
 
 	for(int i=1;i<=n_states;i++)
-		aModel.setStateVariable(initState,strs_labels[i],initStateVector[i-1]);
+		aModel.setStateVariableValue(initState,strs_labels[i],initStateVector[i-1]);
 
 	initState.updTime() = initTime;
 

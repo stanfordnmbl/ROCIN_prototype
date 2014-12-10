@@ -103,7 +103,7 @@ public:
 	static void evaluateMuscleForceBasedOnActivation(const Model& aModel, const SimTK::State& s, const double* para, const Vector& activations, Vector& muscleForces);
 	
 protected:
-	void connectToModel(Model& model) OVERRIDE_11;
+    void connectToModel(Model& model); // OVERRIDE_11;
 private:
 	void setNull();
     
