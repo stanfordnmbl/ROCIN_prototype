@@ -585,12 +585,14 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 	_mpcSolver->setDiagSd(Sd.diag());
 }
 
-void ROCINForceController::connectToModel(Model& model)
+//void ROCINForceController::connectToModel(Model& model)
+void ROCINForceController::extendConnectToModel(Model& model)
 {
 
 //	setUpInternalModel(model);
 
-	Super::connectToModel(model);
+//	Super::connectToModel(model);
+    Super::extendConnectToModel(model);
 
 	setNumControls(getActuatorSet().getSize());
 	
@@ -773,8 +775,9 @@ SimTK::State& ROCINForceController::setInitStateFromFile(Model& aModel, const st
 	stateStorage->getTime(0,initTime);
 	stateStorage->getData(0,n_states,initStateVector);
 
-	for(int i=1;i<=n_states;i++)
-		aModel.setStateVariable(initState,strs_labels[i],initStateVector[i-1]);
+    for (int i = 1; i <= n_states; i++)
+        aModel.setStateVariableValue(initState, strs_labels[i], initStateVector[i - 1]);
+		//aModel.setStateVariable(initState,strs_labels[i],initStateVector[i-1]);
 
 	initState.updTime() = initTime;
 
