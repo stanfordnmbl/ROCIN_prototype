@@ -179,6 +179,8 @@ void ROCINForceController::setNull()
 	_speed_tracking_penalty = 50.0;
 	_activation_penalty = 1.0;
 	_PD_penalty = 0.01;
+	_control_changerate_penalty = 0.0;
+
 	_lowpass_freq = -1.0;
 
 	_use_taylor_expansion = false;
@@ -204,6 +206,15 @@ void ROCINForceController::setNull()
 
 }
 
+// match the coordinate label string (this also handles the old state file and new state file) 
+bool matchStringLabel(const std::string& str_ref, const std::string& str_cmp)
+{
+    if (str_ref == str_cmp)
+        return true;
+    if (str_cmp.find(str_ref) != std::string::npos && str_cmp.find("value") != std::string::npos)
+        return true;
+    return false;
+}
 
 void ROCINForceController::evalModelCoordTrackingErrs(const Model& aModel, const std::string& coordFileName1, const std::string& coordFileName2, const std::string& outFileName)
 {
@@ -226,14 +237,6 @@ void ROCINForceController::evalModelCoordTrackingErrs(const Model& aModel, const
 	int n_samples_cmp = cmpCoordData->getSize();
 	int numCoords_ref = refCoordData->getColumnLabels().size()-1;
 
-    //write the header
-	fout<<"CoordErrors"<<std::endl;
-	fout<<"version=1"<<std::endl;
-	fout<<"nRows="<<n_samples_cmp<<std::endl;
-	fout<<"nColumns="<<1+numCoords_ref<<std::endl;
-	fout<<"inDegrees=no"<<std::endl;
-	fout<<"endheader"<<std::endl;
-
 	const Array<std::string>& strs_labels = refCoordData->getColumnLabels();
 	const Array<std::string>& strs_labels_cmp = cmpCoordData->getColumnLabels();
 
@@ -245,17 +248,39 @@ void ROCINForceController::evalModelCoordTrackingErrs(const Model& aModel, const
 	{
 		for(int j=1;j<=numCoords_cmp;j++)
 		{
-			if(strs_labels[i] == strs_labels_cmp[j])
+			//if(strs_labels[i] == strs_labels_cmp[j])
+            if (matchStringLabel(strs_labels[i], strs_labels_cmp[j]))
 			{
 				corresponding_indices_in_cmp[i-1] = j-1;
 				break;
 			}
 		}
 	}
+
+    std::vector<std::string> strs_labels_new;
+    std::vector<int> corresponding_indices_in_cmp_new;
+    strs_labels_new.push_back(strs_labels[0]);
+    for (int i = 1; i <= numCoords_ref; ++i)
+    {
+        if (corresponding_indices_in_cmp[i - 1] > -1)
+        {
+            strs_labels_new.push_back(strs_labels[i]);
+            corresponding_indices_in_cmp_new.push_back(corresponding_indices_in_cmp[i - 1]);
+        }
+    }
+    
+    //write the header
+    fout << "CoordErrors" << std::endl;
+    fout << "version=1" << std::endl;
+    fout << "nRows=" << n_samples_cmp << std::endl;
+    fout << "nColumns=" << strs_labels_new.size() << std::endl;
+    fout << "inDegrees=no" << std::endl;
+    fout << "endheader" << std::endl;
+
 	
 	fout<<"time";
-	for(int i=1;i<=numCoords_ref;i++)
-		fout<<" "<<strs_labels.get(i).c_str();
+    for (int i = 1; i < strs_labels_new.size(); i++)
+        fout << " " << strs_labels_new[i].c_str();
 	fout<<std::endl;
 
 	SimTK::Real t;
@@ -269,21 +294,19 @@ void ROCINForceController::evalModelCoordTrackingErrs(const Model& aModel, const
 		cmpCoordData->getTime(i,t);	
 		cmpCoordData->getData(i,numCoords_cmp,q);
 		refCoordData->getDataAtTime(t,numCoords_ref,q_ref);
-
+        fout << t;
 		for(int j=0;j<numCoords_ref;j++)
 		{
 			if(corresponding_indices_in_cmp[j]<0)
 				err_q[j] = 0;
-			else
-				err_q[j] = q[corresponding_indices_in_cmp[j]]-q_ref[j];
+            else
+            {
+                err_q[j] = q[corresponding_indices_in_cmp[j]] - q_ref[j];
+                fout << " " << err_q[j];
+            }
 		}
 		
-		fout<<t;
-		for(int j=0;j<numCoords_ref;j++)
-			fout<<" "<<err_q[j];
-
-		fout<<std::endl;
-		
+		fout<<std::endl;		
 	}
 
 	fout.close();
@@ -526,7 +549,7 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
     // objective function time: \dot u^T * Sd * \dot u
 	Matrix Sd(n_controls,n_controls);
 	Sd.setToZero();
-
+	Sd.diag().setTo(_control_changerate_penalty);
     // do not track the coordinates or speeds that are constrained
 	{
 		const Array<std::string>& labelArray = _coordData->getColumnLabels();
@@ -1682,7 +1705,8 @@ void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State&
 
 	for(int i=0;i<n_dynamics;i++)
 	{
-		_internalSubsys->assignTimeAndQU(s.getTime()+dt_ahead*(i+1),s_cpy);
+		//_internalSubsys->assignTimeAndQU(s.getTime()+dt_ahead*(i+1),s_cpy);
+        _internalSubsys->assignTimeAndQU(s.getTime() + dt_ahead*i, s_cpy);
 
 		newState_mbs_array[i] = s_cpy;
 

@@ -57,6 +57,8 @@ public:
 	OpenSim_DECLARE_PROPERTY(activation_penalty,double,"activation penalty");
     //joint acceleration tracking penalty
 	OpenSim_DECLARE_PROPERTY(PD_penalty, double, "PD controlled acceleration penalty");
+	//joint acceleration tracking penalty
+	OpenSim_DECLARE_PROPERTY(control_changerate_penalty, double, "Control changerate penalty");
     //natural frequency of the model (used to specify the critically damped PD gains)
 	OpenSim_DECLARE_PROPERTY(natural_frequency, double, "Natural Frequency of the model");
 

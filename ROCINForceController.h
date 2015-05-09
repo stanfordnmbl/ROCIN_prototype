@@ -57,6 +57,7 @@ public:
 	void setSpeedTrackingPenalty(double s) { _speed_tracking_penalty = s; }
 	void setActivationPenalty(double s) { _activation_penalty = s; }
 	void setPDPenalty(double s) { _PD_penalty = s; }
+	void setControlChangeRatePenalty(double s) { _control_changerate_penalty = s; }
     // set the other parameters
 	void setUseImplicitIntegForMPC(bool s) { _mpcSolver->setUseImplicit(s); }
 	void setUseTaylorExpansion(bool s) { _use_taylor_expansion = s; }
@@ -174,6 +175,7 @@ private:
 	double _speed_tracking_penalty;
 	double _activation_penalty;
 	double _PD_penalty;
+	double _control_changerate_penalty;
 
 	double _lookahead_window;
 	int _lookahead_number;

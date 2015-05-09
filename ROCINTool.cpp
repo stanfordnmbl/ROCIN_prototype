@@ -35,8 +35,8 @@ ROCINTool::ROCINTool(const std::string& setUpFile)
 
 ROCINTool::~ROCINTool()
 {
-	if(_controller != NULL)
-		delete _controller;
+//	if(_controller != NULL)
+//		delete _controller;
 }
 
 void ROCINTool::evalCoordTrackingErrs(const std::string& modelFile, const std::string& desired_kinematics_file, const std::string& state_file, const std::string& err_file)
@@ -90,6 +90,7 @@ bool ROCINTool::run()
 	_controller->setSpeedTrackingPenalty(getProperty_speed_tracking_penalty().getValue());
 	_controller->setActivationPenalty(getProperty_activation_penalty().getValue());
 	_controller->setPDPenalty(getProperty_PD_penalty().getValue());
+	_controller->setControlChangeRatePenalty(getProperty_control_changerate_penalty().getValue());
 
 	_controller->setUseTaylorExpansion(getProperty_use_taylor_expansion().getValue());
 	_controller->setLowPassCutOffFrequency(getProperty_lowpass_cutoff_frequency().getValue());
@@ -191,8 +192,8 @@ bool ROCINTool::run()
     //call doControlPrecomputation (this is the core function that compute the control signals), calling this explicitly so that the control values are 
     //also specified at the starting point
 	_controller->doControlPrecomputation(si);
-
 	_controller->setTargetTime(si.getTime()+_controller->getTargetDT());
+    _controller->setPenalizeControlDerivative(true);
 
     // do simulation
 	manager.integrate(si);
@@ -248,5 +249,6 @@ void ROCINTool::constructProperties()
 	constructProperty_speed_tracking_penalty(50.0);
 	constructProperty_activation_penalty(1.0);
 	constructProperty_PD_penalty(0.01);
+	constructProperty_control_changerate_penalty(0.0);
 	constructProperty_natural_frequency(10.0);
 }
