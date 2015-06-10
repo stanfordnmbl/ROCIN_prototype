@@ -48,6 +48,7 @@ using SimTK::Vec3;
 using namespace OpenSim;
 
 #define VERBOSE_PRINT 0
+#define VERBOSE_DEBUG 1
 
 class ROCINControlEventHandler : public SimTK::PeriodicEventHandler {
 public:
@@ -367,6 +368,11 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 			getModel().getSimbodyEngine().convertDegreesToRadians(*qStore);
 			getModel().getSimbodyEngine().convertDegreesToRadians(*uStore);
 		}
+
+#if VERBOSE_DEBUG
+        qStore->print("q_ref.sto");
+        uStore->print("u_ref.sto");
+#endif
 		
 		_qSet = new GCVSplineSet(5,qStore);		
 		_uSet = new GCVSplineSet(5,uStore);
