@@ -38,7 +38,7 @@ integs = zeros(n_labels,1);
 
 for k=1:n_labels
     % we do not consider the tracking error for constrained joint
-    if(isempty(strfind(label_array{k},'_constrained')))
+    if(isempty(strfind(char(label_array{k}),'_constrained')))
         integs(k) = dot(data_array(1:n_samples-1,k).^2,diff(time_array));
     end
 end
@@ -50,7 +50,7 @@ fid = fopen(f_output,'w');
 n_effective = 0;
 
 for k=1:n_labels
-    if(isempty(strfind(label_array{k},'_constrained'))&&integs(k)>1e-9)
+    if(isempty(strfind(char(label_array{k}),'_constrained'))&&integs(k)>1e-9)
         n_effective = n_effective + 1;
         fprintf(fid,'RMS Err %s: %f\r\n',char(label_array{k}),sqrt(integs(k)));
     end
