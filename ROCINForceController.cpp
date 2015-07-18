@@ -387,11 +387,17 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 		delete dudtStore;
 
 		FunctionSet * yRefSet = new FunctionSet();
-		for(int i=0;i<_qSet->getSize();i++)
-			yRefSet->cloneAndAppend(_qSet->get(i));
+        for (int i = 0; i < _qSet->getSize(); i++)
+        {
+//            std::cout << i << ": " << _qSet->get(i).getName() << std::endl;
+            yRefSet->cloneAndAppend(_qSet->get(i));
+        }
 		
-		for(int i=0;i<_uSet->getSize();i++)
-			yRefSet->cloneAndAppend(_uSet->get(i));
+        for (int i = 0; i < _uSet->getSize(); i++)
+        {
+//            std::cout << i << ": " << _uSet->get(i).getName() << std::endl;
+            yRefSet->cloneAndAppend(_uSet->get(i));
+        }
 
         // construct the MPC solver
 		_mpcSolver = new MPC(n_controls,n_y,n_samples,initTime,_lookahead_window,yRefSet,_lookahead_number);
@@ -585,6 +591,18 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 
 	}
 
+    // set the mapping for non muscle actuators
+    // TODO: currently we simply assume coordinates in the coordinate set is the same with the generalized force order
+    // This might not be the case for new version of OpenSim, we should fix this potential problem
+    _mapping_nonMuscleActuators.resize(_n_u, _numNonMuscleActuators);
+    _mapping_nonMuscleActuators.setToZero();
+
+    for (int i = 0; i < _virtual_actuator_coord_array.size(); i++)
+    {
+        std::string coord_name = _virtual_actuator_coord_array.get(i);
+        int idx_state = getModel().getCoordinateSet().getIndex(coord_name);
+        _mapping_nonMuscleActuators.set(idx_state, i, 1.0);
+    }
 
 	if(_numNonMuscleActuators>0)
 	{
@@ -1471,7 +1489,7 @@ void ROCINForceController::computeMBSGeneralizedForceDynamicsNumerically(const S
 
 
 	SimTK::Vector_<SimTK::SpatialVec> bodyAccs;	
-
+    //TODO: figure out the exact order of genForces
 	smss.calcAcceleration(s_cpy,genForces,bodyForces,A,bodyAccs);
 
 	Vector uDot(_n_u);
@@ -1622,23 +1640,13 @@ void ROCINForceController::computeNqdot(const SimTK::State& s,  Matrix& Nqdot)
 
 }
 
+
 void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State& s)
 {
-
-//    for (int j = 0; j < _n_u; j++)
-//    {
-//        Coordinate& coord = getModel().getCoordinateSet().get(j);
-//        std::cout << "coord "<<j<<": "<<coord.getName().c_str() << std::endl;
-//    }
-
-    //std::cout << "s = " << s << std::endl;
-//    PrintVector(s.getQ(), "s.Q", std::cout);
-//    PrintVector(s.getU(), "s.U", std::cout);
-//    exit(0);
-    
-
 	const SimTK::SimbodyMatterSubsystem& smss = getModel().getMatterSubsystem();		
-	const SimTK::MultibodySystem& mbs = getModel().getMultibodySystem();
+    const SimTK::MultibodySystem& mbs = getModel().getMultibodySystem();
+
+    
 	mbs.realize(s,SimTK::Stage::Velocity);
 
 	Array<Vector> G_array,D_array,E_array;
@@ -1738,15 +1746,6 @@ void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State&
 		computeMBSStateDynamics(newState_mbs_array[i],_gen_forces_array[i],muscleJacobian_array[i],_use_taylor_expansion,A_mbs,B_mbs,C_mbs);
         // combine multibody dynamics and muscle relation
 		combineSystemDynamics(A_mbs,B_mbs,C_mbs,A_fm_u_array[i],B_fm_u_array[i],F_array[i],H_array[i],G_array[i]);
-
-        //PrintMatrix(A_mbs, "A_mbs", std::cout);
-        //PrintMatrix(B_mbs, "B_mbs", std::cout);
-        //PrintVector(C_mbs, "C_mbs", std::cout);
-
-        //PrintVector(A_fm_u_array[i], "A_fm_u", std::cout);
-        //PrintVector(B_fm_u_array[i], "B_fm_u", std::cout);
-        //exit(0);
-
 		
 		D_array[i].resize(N);E_array[i].resize(N);
 		D_array[i].setTo(1.0);E_array[i].setToZero();
@@ -1766,8 +1765,8 @@ void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State&
 	Vector cur_u = _mpcSolver->getCurrentU();	
 
 	for(int i=0;i<cur_u.size();i++)
-		_actuator_controls_new[i] = cur_u[i];	
-
+		_actuator_controls_new[i] = cur_u[i];
+ 
 	_controlSet.setControlValues(s.getTime()+_lookahead_window,&_actuator_controls_new[0]);
 
     // store generalized forces into an array
@@ -2068,17 +2067,12 @@ void ROCINForceController::addVirtualActuators(Model& aModel, const Array<std::s
 	int n_u = aModel.getNumSpeeds();
 	_numNonMuscleActuators = coords_virtual.size();
 
-	_mapping_nonMuscleActuators.resize(n_u,_numNonMuscleActuators);
-	_mapping_nonMuscleActuators.setToZero();
-
 	for(int i=0;i<coords_virtual.size();i++)
 	{
 		std::string coord_name = coords_virtual.get(i);
-		
+
 		int idx_coord = aModel.getCoordinateSet().getIndex(coord_name,0);
 		Coordinate& coord = aModel.getCoordinateSet().get(idx_coord);
-
-		_mapping_nonMuscleActuators.set(idx_coord,i,1.0);
 
 		CoordinateActuator* newActuator = new CoordinateActuator();
 		

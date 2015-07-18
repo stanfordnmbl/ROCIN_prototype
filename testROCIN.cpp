@@ -10,13 +10,15 @@ using namespace std;
 
 void testROCINSingleMuscle();
 void testROCINArm();
+void testSub01();
 
 int main() {
 	
     SimTK::Array_<std::string> failures;
 
     //try { testROCINSingleMuscle(); }
-    try{ testROCINArm(); }
+    //try{ testROCINArm(); }
+    try{ testSub01(); }
     catch (const std::exception& e)
     {
         cout << e.what() << endl; failures.push_back("testROCINArm_rigid");
@@ -73,4 +75,11 @@ void testROCINArm()
     ROCINTool rocin("arm26_Setup_ROCIN.xml");
     rocin.run();
 
+}
+
+
+void testSub01()
+{
+    ROCINTool rocin("walk2D_skeleton_Setup_ROCIN.xml");
+    rocin.run();
 }
