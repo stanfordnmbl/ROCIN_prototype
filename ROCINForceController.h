@@ -19,6 +19,7 @@ class ConstantController;
 class ROCINActuatorSystem;
 class ROCINActuatorSubsystem;
 
+#define VERBOSE_DEBUG 1
 
 namespace OpenSim {
 
@@ -84,6 +85,8 @@ public:
 	void setTargetDT(double aDT) { _targetDT = aDT; }
 	double getTargetDT() const { return _targetDT; }
 
+    void setOutputDir(const std::string& dir) { _output_dir = dir; }
+    const std::string& getOutputDir() const { return _output_dir; }
 
 	double getInitTime() { return _mpcSolver->getInitTime(); }
 	double getFinalTime() { return _mpcSolver->getFinalTime(); }
@@ -102,7 +105,10 @@ public:
 	static void evaluateMuscleForceBasedOnFiberLength(const Model& aModel,const SimTK::State& s, const double* para, const Vector& fiberLength, Vector& muscleForces);
     // evaluate the muscle forces based on the activations
 	static void evaluateMuscleForceBasedOnActivation(const Model& aModel, const SimTK::State& s, const double* para, const Vector& activations, Vector& muscleForces);
-	
+
+    // debug information
+    Storage  _debug_data_storage;
+
 protected:
 	//void connectToModel(Model& model) override;
     void extendConnectToModel(Model& model) override;
@@ -228,6 +234,7 @@ private:
 
 	MPC* _mpcSolver;
 
+    std::string _output_dir;
 	
 };
 }	//namespace

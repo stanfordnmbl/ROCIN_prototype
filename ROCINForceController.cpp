@@ -47,8 +47,9 @@ using SimTK::Vec3;
 
 using namespace OpenSim;
 
-#define VERBOSE_PRINT 0
-#define VERBOSE_DEBUG 1
+// apply smart individual scaling
+#define SCALE_INDIVIDUAL_OBJECTIVE 1
+#define TOL_ANGLE_ERROR            0.0174444
 
 class ROCINControlEventHandler : public SimTK::PeriodicEventHandler {
 public:
@@ -361,6 +362,7 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 		Storage* qStore = NULL;
 		Storage* uStore = NULL;
 
+        qStore = new Storage(_coordDataPad);
 		getModel().getSimbodyEngine().formCompleteStorages(initState,_coordDataPad,qStore,uStore);
 
 		if(qStore->isInDegrees())
@@ -369,14 +371,17 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 			getModel().getSimbodyEngine().convertDegreesToRadians(*uStore);
 		}
 
+        //delete uStore;
+        _qSet = new GCVSplineSet(5, qStore);
+        //uStore = _qSet->constructStorage(1);
+
 #if VERBOSE_DEBUG
-        qStore->print("q_ref.sto");
-        uStore->print("u_ref.sto");
+        qStore->print(_output_dir+"/q_ref.sto");
+        uStore->print(_output_dir+"/u_ref.sto");
 #endif
 		
-		_qSet = new GCVSplineSet(5,qStore);		
 		_uSet = new GCVSplineSet(5,uStore);
-		Storage* dudtStore = _uSet->constructStorage(1);
+        Storage* dudtStore = _uSet->constructStorage(1);
 		_uDotSet = new GCVSplineSet(5,dudtStore);
 
 
@@ -471,7 +476,7 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 	_mpcSolver->setLowerBounds(_control_lowerbounds);
 	_mpcSolver->setUpperBounds(_control_upperbounds);
 
-
+    _mpcSolver->setNumMuscleControl(_numMuscles);
     // initialize the matrix coefficients for the dynamics equation: y_dot = A*y + B*u+ C (y = x in our case)
     // these matrix values are not really used since we will assign them again in the doControlPrecomputation
 	Matrix A(n_y,n_y);
@@ -537,18 +542,29 @@ void ROCINForceController::initMPCSolver(int numExtraObservations)
 
 	int n_tracking = n_y - numExtraObservations;
 	//Q.updBlock(0,0,n_tracking,n_tracking).diag().setTo(_tracking_penalty);	//5.0e1	
+#if SCALE_INDIVIDUAL_OBJECTIVE
+    double scale_angle = 1.0/(TOL_ANGLE_ERROR*TOL_ANGLE_ERROR*_numCoords);
+    double scale_vel = scale_angle*_lookahead_window*_lookahead_window;
+    Q.updBlock(0,0,n_tracking/2,n_tracking/2).diag().setTo(_coord_tracking_penalty*scale_angle);	//5.0e1	
+    Q.updBlock(n_tracking/2,n_tracking/2,n_tracking/2,n_tracking/2).diag().setTo(_speed_tracking_penalty*scale_vel);
+#else
 	Q.updBlock(0,0,n_tracking/2,n_tracking/2).diag().setTo(_coord_tracking_penalty);	//5.0e1	
 	Q.updBlock(n_tracking/2,n_tracking/2,n_tracking/2,n_tracking/2).diag().setTo(_speed_tracking_penalty);
-	
+#endif	
 	Matrix R(n_controls,n_controls);
 	R.setToZero();
-	
+
+#if SCALE_INDIVIDUAL_OBJECTIVE
+    double scale_muscle_act = 1.0 / _numMuscles;
+    R.updBlock(0,0,_numMuscles,_numMuscles).diag().setTo(_activation_penalty*scale_muscle_act);
+#else
 	R.updBlock(0,0,_numMuscles,_numMuscles).diag().setTo(_activation_penalty);
+#endif
 
 	if(_numNonMuscleActuators>0)
 	{
-		for(int i=0;i<_numNonMuscleActuators;i++)
-			R.set(_numMuscles+i,_numMuscles+i,_virtual_actuator_weight_array[i]);		
+        for (int i = 0; i < _numNonMuscleActuators; i++)
+            R.set(_numMuscles + i, _numMuscles + i, _virtual_actuator_weight_array[i]);
 	}
 
     // objective function time: (\dot y - \hat\dot y)^T * Qd * (\dot y - \hat\dot y)
@@ -1719,8 +1735,8 @@ void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State&
 
 	for(int i=0;i<n_dynamics;i++)
 	{
-		//_internalSubsys->assignTimeAndQU(s.getTime()+dt_ahead*(i+1),s_cpy);
-        _internalSubsys->assignTimeAndQU(s.getTime() + dt_ahead*i, s_cpy);
+		_internalSubsys->assignTimeAndQU(s.getTime()+dt_ahead*(i+1),s_cpy);
+        //_internalSubsys->assignTimeAndQU(s.getTime() + dt_ahead*i, s_cpy);
 
 		newState_mbs_array[i] = s_cpy;
 
@@ -1760,7 +1776,9 @@ void ROCINForceController::doPrecomputation_Varying_Dynamics(const SimTK::State&
 	getCurObservation(s,y,false,false,false);
 
     // use MPC solver to solve control signals
-	_mpcSolver->precomputeU(s.getTime(),y);
+	std::vector<SimTK::Real> debug_info = _mpcSolver->precomputeU(s.getTime(),y,true);
+    if (VERBOSE_DEBUG)
+    {   _debug_data_storage.append(s.getTime(), debug_info.size(), &debug_info[0]);}
 
 	Vector cur_u = _mpcSolver->getCurrentU();	
 

@@ -71,6 +71,11 @@ bool ROCINTool::run()
     //construct the controller
 	_controller = new ROCINForceController(osimModel,desired_kinematics_file,true,getProperty_update_horizon().getValue(),getProperty_prediction_step().getValue());
 
+    // set up the ouptut directory
+    std::string output_dir = getProperty_results_directory().getValue();
+    IO::makeDir(output_dir);
+    _controller->setOutputDir(output_dir);
+
 	if(getProperty_use_taylor_expansion().getValue())
 	{
 		if(getProperty_use_implicit_mpc_integ().getValue() == false)
@@ -84,6 +89,7 @@ bool ROCINTool::run()
 	{
 		std::cout<<"We suggest that you use implicit mpc integration and taylor expansion if you have prediction step larger than 1!!!"<<std::endl;		
 	}
+
 
     //set the penalty weight
 	_controller->setCoordTrackingPenalty(getProperty_coord_tracking_penalty().getValue());
@@ -202,23 +208,26 @@ bool ROCINTool::run()
 	int msec = diff*1000/CLOCKS_PER_SEC;
 	std::cout<<"ROCIN Running time: "<<double(msec)/1000.0<<" sec"<<std::endl;
 
-    //write output files
-	IO::makeDir(getProperty_results_directory().getValue());
 
-	std::string control_file = getProperty_results_directory().getValue()+"/ROCIN_controls.sto";
-	std::string state_file = getProperty_results_directory().getValue()+"/ROCIN_states.sto";
+    std::string control_file = output_dir + "/ROCIN_controls.sto";
+    std::string state_file = output_dir + "/ROCIN_states.sto";
     //write the control signals
 	osimModel.printControlStorage(control_file);
     //write the state 
 	manager.getStateStorage().print(state_file);
     //write the coord tracking error
-	std::string err_file = getProperty_results_directory().getValue()+"/err_coord_tracking.sto";
+    std::string err_file = output_dir + "/err_coord_tracking.sto";
 	_controller->evalCoordTrackingErrs(desired_kinematics_file,state_file,err_file);
 	//write the control analysis result
-	std::string report_file = getProperty_results_directory().getValue()+"/control_analysis_report.sto";
+    std::string report_file = output_dir + "/control_analysis_report.sto";
 	controlAnalysis->getAnalysisStorage().print(report_file);
 
-
+    //write the tracking error with the desired trajectory
+#if VERBOSE_DEBUG
+    evalCoordTrackingErrs(modelFileName, output_dir + "/q_ref.sto", state_file, output_dir + "/q_err.sto");
+    evalCoordTrackingErrs(modelFileName, output_dir + "/u_ref.sto", state_file, output_dir + "/u_err.sto");
+    _controller->_debug_data_storage.print(output_dir + "/debug_info.sto");
+#endif
 
 	return true;
 }

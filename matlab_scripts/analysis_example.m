@@ -1,5 +1,5 @@
 clear all;
-folder_dir = 'C:\Research\Stanford\Projects\ROCIN\ROCIN_prototype\images\10ms_1step_implicity_taylor\arm26_allmuscle_match_noisy_std_1_bangbang_10ms_1step\';
+folder_dir = 'C:\Research\Stanford\bin_3\sub01_scale_study_Q_1e2_1e2_5ms_4step_act1_scaled2_reserve\';
 % analyze the activaiton
 % doActivationAnalysis(folder_dir,'\arm26_states.sto','\acts_integral_new.txt');
 % % analyze the reserve forces

@@ -6,6 +6,10 @@
 
 using namespace OpenSim;
 
+#define MPC_DEBUG_INFO_VEC_SIZE 8
+enum MPCDebugIdx{ CoordErrIdx = 0, VelErrIdx = 1, MuscleEffortIdx = 2, ResEffortIdx = 3,
+    WeightedCoordErrIdx = 4, WeightedVelErrIdx = 5, WeightedMuscleEffortIdx = 6, WeightedResEffortIdx=7};
+
 // using a FunctionSet to provide the desired trajectory of the observation variables
 MPC::MPC(int n_controls, int n_y, int n_samples, double ti, double dt, FunctionSet* r_spline_input, int windowSize)
 {
@@ -118,6 +122,9 @@ MPC::MPC(int n_controls, int n_y, double ti, double dt, const Array_<Vector>& re
 {
 	_n_controls = n_controls;
 	_n_y = n_y;
+
+    _n_muscle_controls = 0;
+    _n_res_controls = 0;
 
 	_initialTime = ti;
 	_dt = dt;
@@ -560,8 +567,10 @@ bool MPC::isUpToDate(double t)
 }
 
 // this is the core function that solves MPC problem
-void MPC::precomputeU(double t, const Vector& initY)
+std::vector<SimTK::Real> MPC::precomputeU(double t, const Vector& initY, bool return_debug_info)
 {
+    std::vector<SimTK::Real> debug_info;
+
 	int n_u = 0;
 	if(_B_array.size()>0)
 		n_u = _B_array[0].ncol();
@@ -585,7 +594,7 @@ void MPC::precomputeU(double t, const Vector& initY)
 	if(_qp_win_size<1)
 	{
 		_up_to_date = true;
-		return;
+		return debug_info;
 	}
 
 	//using PD law to update Ydot reference
@@ -625,6 +634,12 @@ void MPC::precomputeU(double t, const Vector& initY)
 	std::cout<<"optimization error: "<<f<<std::endl;
 
 
+    if (return_debug_info)
+    {
+        debug_info.resize(MPC_DEBUG_INFO_VEC_SIZE);
+        SimTK::Real f_debug;
+        _qp.getObjectiveFuncDebugInfo(result_u, f_debug, debug_info);
+    }
 
 
 	for(int i=0;i<_qp_win_size;i++)
@@ -642,6 +657,7 @@ void MPC::precomputeU(double t, const Vector& initY)
 
 	_up_to_date = true;
 
+    return debug_info;
 }
 
 // update the YdotRef (in our case, it is mainly used to update the desired acceleration by PD rule)
@@ -720,21 +736,43 @@ MPCQP::MPCQP(MPC* mpc)
 // override the objective function
 int MPCQP::objectiveFunc( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const
 {
+    std::vector<SimTK::Real> debug_info = {};
 	if(_mpc->_USE_IMPLICIT)
 	{
 		if(_mpc->_use_varying_dynamics)
-			return objectiveFunc_varying_dynamics_implicit(coefficients,new_coefficients,f);
+            return objectiveFunc_varying_dynamics_implicit(coefficients, new_coefficients, f, debug_info);
 		else
-			return objectiveFunc_const_dynamics_implicit(coefficients,new_coefficients,f);
+            return objectiveFunc_const_dynamics_implicit(coefficients, new_coefficients, f, debug_info);
 	}
 	else
 	{
 		if(_mpc->_use_varying_dynamics)
-			return objectiveFunc_varying_dynamics_explicit(coefficients,new_coefficients,f);
+            return objectiveFunc_varying_dynamics_explicit(coefficients, new_coefficients, f, debug_info);
 		else
-			return objectiveFunc_const_dynamics_explicit(coefficients,new_coefficients,f);
+            return objectiveFunc_const_dynamics_explicit(coefficients, new_coefficients, f, debug_info);
 
 	}
+}
+
+
+
+int MPCQP::getObjectiveFuncDebugInfo(const Vector& coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const
+{
+    if (_mpc->_USE_IMPLICIT)
+    {
+        if (_mpc->_use_varying_dynamics)
+            return objectiveFunc_varying_dynamics_implicit(coefficients, true, f, debug_info);
+        else
+            return objectiveFunc_const_dynamics_implicit(coefficients, true, f, debug_info);
+    }
+    else
+    {
+        if (_mpc->_use_varying_dynamics)
+            return objectiveFunc_varying_dynamics_explicit(coefficients, true, f, debug_info);
+        else
+            return objectiveFunc_const_dynamics_explicit(coefficients, true, f, debug_info);
+
+    }
 }
 
 // override the gradient of the objective function
@@ -757,8 +795,11 @@ int MPCQP::gradientFunc( const Vector& coefficients, bool new_coefficients, Vect
 }
 
 // using varying dynamics (instead of constant dynamics) and explicit formulation
-int MPCQP::objectiveFunc_varying_dynamics_explicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const
+int MPCQP::objectiveFunc_varying_dynamics_explicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const
 {
+    if (debug_info.size() != 0 && debug_info.size() != MPC_DEBUG_INFO_VEC_SIZE)
+        throw std::invalid_argument("debug_info doesn't have proper size!");
+
 	f = 0.0;
 	Vector y = _mpc->_qp_y0;
 	Vector u_pre = _mpc->_qp_u0;
@@ -797,8 +838,6 @@ int MPCQP::objectiveFunc_varying_dynamics_explicit( const Vector& coefficients, 
 			u_pre = u;
 		}
 	}
-
-	f *= _mpc->_dt;
 
 	Vector e = y-_mpc->_r_array[k_y];
 
@@ -893,16 +932,25 @@ int MPCQP::gradientFunc_varying_dynamics_explicit(const Vector& coefficients, bo
 
 	}
 
-	gradient *= _mpc->_dt;
-
-
 	return 0;
 
 }
 
 // using varying dynamics and implicit formulation
-int MPCQP::objectiveFunc_varying_dynamics_implicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const
+int MPCQP::objectiveFunc_varying_dynamics_implicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const
 {
+    if (debug_info.size() != 0 && debug_info.size() != MPC_DEBUG_INFO_VEC_SIZE)
+        throw std::invalid_argument("debug_info doesn't have proper size!");
+
+    bool get_debug_info = (debug_info.size() > 0);
+
+    if (get_debug_info)
+    {
+        debug_info.assign(MPC_DEBUG_INFO_VEC_SIZE, 0.0);
+        if (_mpc->_n_muscle_controls + _mpc->_n_res_controls != _mpc->_n_controls)
+            throw std::runtime_error("The number of muscle control for MPC hasn't been set properly!");
+    }
+
 	f = 0.0;
 	Vector y = _mpc->_qp_y0;
 	Vector u_pre = _mpc->_qp_u0;
@@ -939,6 +987,41 @@ int MPCQP::objectiveFunc_varying_dynamics_implicit( const Vector& coefficients, 
 		Vector z = _mpc->DiLeftMultiply(i,u)+_mpc->_E_array[i];
 		f += z.elementwiseMultiply(_mpc->RLeftMultiply(z)).sum();
 
+        if (get_debug_info)
+        {
+            Vector e_coord = e;
+            Vector e_vel = e;
+            int n_coord = n_y / 2;
+            e_coord.updBlock(n_coord, 0, n_coord, 1).setToZero();
+            e_vel.updBlock(0, 0, n_coord, 1).setToZero();
+            Matrix unit_mat(n_coord, n_coord);
+            unit_mat.setToZero();
+            for (int j = 0; j < n_coord; ++j)
+            {
+                if ((_mpc->_Q_is_diag && _mpc->_diag_Q[j]>0)
+                    || (!_mpc->_Qd_is_diag && _mpc->_Q(j,j)>0)
+                    )
+                {unit_mat.set(j, j, 1.0);}
+            }
+
+            Vector e_coord_only = e_coord.block(0, 0, n_coord, 1).getAsVector();
+            Vector e_vel_only = e_vel.block(n_coord, 0, n_coord, 1).getAsVector();
+            debug_info[CoordErrIdx] += e_coord_only.elementwiseMultiply(e_coord_only).sum();
+            debug_info[VelErrIdx] += e_vel_only.elementwiseMultiply(unit_mat*e_vel_only).sum();
+            debug_info[WeightedCoordErrIdx] += e_coord.elementwiseMultiply(_mpc->QLeftMultiply(e_coord)).sum();
+            debug_info[WeightedVelErrIdx] += e_vel.elementwiseMultiply(_mpc->QLeftMultiply(e_vel)).sum();
+            Vector z_muscle = z;
+            Vector z_res = z;
+            int n_muscle = _mpc->_n_muscle_controls;
+            int n_res = _mpc->_n_res_controls;
+            z_muscle.updBlock(n_muscle, 0, n_res, 1).setToZero();
+            z_res.updBlock(0, 0, n_muscle, 1).setToZero();
+            debug_info[MuscleEffortIdx] += z_muscle.elementwiseMultiply(z_muscle).sum();
+            debug_info[ResEffortIdx] += z_res.elementwiseMultiply(z_res).sum();
+            debug_info[WeightedMuscleEffortIdx] += z_muscle.elementwiseMultiply(_mpc->RLeftMultiply(z_muscle)).sum();
+            debug_info[WeightedResEffortIdx] += z_res.elementwiseMultiply(_mpc->RLeftMultiply(z_res)).sum();
+        }
+
 		if(_mpc->_penalize_udot)
 		{
 			Vector udot = (u-u_pre)/_mpc->_dt;
@@ -947,8 +1030,6 @@ int MPCQP::objectiveFunc_varying_dynamics_implicit( const Vector& coefficients, 
 		}
 
 	}
-
-	f *= _mpc->_dt;
 
 	Vector e = y-_mpc->_r_array[k_y];
 
@@ -1040,14 +1121,15 @@ int MPCQP::gradientFunc_varying_dynamics_implicit( const Vector& coefficients, b
 
 	}
 
-	gradient *= _mpc->_dt;
-
 	return 0;
 }
 
 // using constant dynamics and explicit formulation
-int MPCQP::objectiveFunc_const_dynamics_explicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const
+int MPCQP::objectiveFunc_const_dynamics_explicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const
 {
+    if (debug_info.size() != 0 && debug_info.size() != MPC_DEBUG_INFO_VEC_SIZE)
+        throw std::invalid_argument("debug_info doesn't have proper size!");
+
 //	PrintVector(coefficients,"coefficients",std::cout);
 //	PrintVector(coefficients.block(92,0,39,1).getAsVector(),"coefficients_subblock",std::cout);
 
@@ -1090,8 +1172,6 @@ int MPCQP::objectiveFunc_const_dynamics_explicit( const Vector& coefficients, bo
 
 		
 	}
-
-	f *= _mpc->_dt;
 	
 	Vector e = y-_mpc->_r_array[k_y];
 
@@ -1206,7 +1286,6 @@ int MPCQP::gradientFunc_const_dynamics_explicit( const Vector& coefficients, boo
 			}
 		}
 
-		gradient *= _mpc->_dt;
 		//gradient *= _mpc->_dt/double(_mpc->_qp_win_size); //decouple the window size effect;
 
 		Vector e = y-_mpc->_r_array[k_y];
@@ -1227,8 +1306,11 @@ int MPCQP::gradientFunc_const_dynamics_explicit( const Vector& coefficients, boo
 }
 
 // using constant dynamics and implicit formulation
-int MPCQP::objectiveFunc_const_dynamics_implicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const
+int MPCQP::objectiveFunc_const_dynamics_implicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const
 {
+    if (debug_info.size() != 0 && debug_info.size() != MPC_DEBUG_INFO_VEC_SIZE)
+        throw std::invalid_argument("debug_info doesn't have proper size!");
+
 //	PrintVector(coefficients,"coefficients",std::cout);
 //	PrintVector(coefficients.block(92,0,39,1).getAsVector(),"coefficients_subblock",std::cout);
 
@@ -1279,7 +1361,6 @@ int MPCQP::objectiveFunc_const_dynamics_implicit( const Vector& coefficients, bo
 		
 	}
 
-	f *= _mpc->_dt;
 	//f *= _mpc->_dt/double(_mpc->_qp_win_size);	//decouple the window size effect;
 	
 	Vector e = y-_mpc->_r_array[k_y];
@@ -1377,7 +1458,6 @@ int MPCQP::gradientFunc_const_dynamics_implicit( const Vector& coefficients, boo
 		}
 	}
 
-	gradient *= _mpc->_dt;
 	//gradient *= _mpc->_dt/double(_mpc->_qp_win_size); //decouple the window size effect;
 
 	Vector e = y-_mpc->_r_array[k_y];

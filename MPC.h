@@ -26,16 +26,18 @@ public:
 	int objectiveFunc( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const;
 	int gradientFunc( const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
 
-	int objectiveFunc_const_dynamics_explicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const;
-	int gradientFunc_const_dynamics_explicit( const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
+    int getObjectiveFuncDebugInfo(const Vector& coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const;
 
-	int objectiveFunc_const_dynamics_implicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const;
+	int objectiveFunc_const_dynamics_explicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info ) const;
+    int gradientFunc_const_dynamics_explicit(const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
+
+    int objectiveFunc_const_dynamics_implicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const;
 	int gradientFunc_const_dynamics_implicit( const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
 
-	int objectiveFunc_varying_dynamics_explicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const;
+    int objectiveFunc_varying_dynamics_explicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const;
 	int gradientFunc_varying_dynamics_explicit( const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
 
-	int objectiveFunc_varying_dynamics_implicit( const Vector& coefficients, bool new_coefficients, SimTK::Real& f ) const;
+    int objectiveFunc_varying_dynamics_implicit(const Vector& coefficients, bool new_coefficients, SimTK::Real& f, std::vector<SimTK::Real>& debug_info) const;
 	int gradientFunc_varying_dynamics_implicit( const Vector& coefficients, bool new_coefficients, Vector &gradient ) const;
 
 
@@ -94,7 +96,7 @@ public:
 	void updateYdotRef(const Vector& curY);
 	
 	int getTimeIndex(SimTK::Real t);
-	void precomputeU(double t, const Vector& initY);
+	std::vector<SimTK::Real> precomputeU(double t, const Vector& initY, bool return_debug_info = false);
 	Vector getCurrentU() const { return _u; }
 	Vector getU(int i) const { return _u_array.col(i); }
 	const Matrix& getUArray() const { return _u_array; }
@@ -108,6 +110,11 @@ public:
 	void setLowerBounds(const Vector& lowerbounds) { _lowerbounds = lowerbounds; }
 	void setUpperBounds(const Vector& upperbounds) { _upperbounds = upperbounds; }
 
+    void setNumMuscleControl(const int n_muscle_control) 
+    {   
+        _n_muscle_controls = n_muscle_control;
+        _n_res_controls = _n_controls - _n_muscle_controls;
+    }
 	void testMPC();
 
 private:
@@ -179,6 +186,8 @@ private:
 	SimTK::Optimizer _opt;
 
 	int _n_controls;
+    int _n_muscle_controls;
+    int _n_res_controls;
 	int _n_y;
 
 	int _qp_start_index;
